@@ -18,6 +18,7 @@ GIT_VERSION := $(shell git rev-parse --short HEAD)
 GIT_COMMIT_TIMESTAMP := $(shell git show -s --pretty=format:"%ct" HEAD)
 
 WITH_MINGW := $(if $(shell echo | $(CC) -dM -E - |grep __MINGW32__),y)
+WITH_APPLE := $(if $(shell echo | $(CC) -dM -E - |grep __APPLE__),y)
 EXPORT_SYMBOLS := -Wl,--export-all-symbols
 EXPORT_SYMBOLS := $(if $(WITH_MINGW),$(EXPORT_SYMBOLS))
 
@@ -25,11 +26,11 @@ PKG_CONFIG_PATH := $(SYSROOT)/usr/share/pkgconfig:$(SYSROOT)/usr/lib/pkgconfig:$
 PKG_CONFIG := env PKG_CONFIG_SYSROOT_DIR="$(SYSROOT)" \
 	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" pkg-config
 
-DEPENDENCIES := glib-2.0 gtk+-2.0 gthread-2.0 gtkdatabox fftw3 libiio libxml-2.0 libcurl jansson
+DEPENDENCIES := glib-2.0 gtk+-2.0 gthread-2.0 gtkdatabox fftw3 libxml-2.0 libcurl jansson $(if $(WITH_APPLE),cairo,libiio)
 
 LDFLAGS := $(shell $(PKG_CONFIG) --libs $(DEPENDENCIES)) \
 	$(if $(WITH_MINGW),-lwinpthread) \
-	-L$(SYSROOT)/usr/lib -lmatio -lz -lm -lad9361
+	-L$(SYSROOT)/usr/lib -lmatio -lz -lm $(if $(WITH_APPLE),-F/Library/Frameworks/ -framework iio -framework ad9361,-lad9361)
 
 ifeq ($(WITH_MINGW),y)
 	LDFLAGS += -Wl,--subsystem,windows
@@ -47,7 +48,7 @@ CFLAGS := $(shell $(PKG_CONFIG) --cflags $(DEPENDENCIES)) \
 	-DFRU_FILES=\"$(FRU_FILES)\" -DGIT_VERSION=\"$(GIT_VERSION)\" \
 	-DGIT_COMMIT_TIMESTAMP='"$(GIT_COMMIT_TIMESTAMP)"' \
 	-DOSC_VERSION=\"$(GIT_BRANCH)-g$(GIT_HASH)\" \
-	-D_POSIX_C_SOURCE=200809L
+	-D_POSIX_C_SOURCE=200809L $(if $(WITH_APPLE),-I/usr/include/malloc -I/usr/include/mach -I/Library/Frameworks/iio.framework/Headers -I/Library/Frameworks/ad9361.framework/Headers)
 
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
@@ -82,8 +83,8 @@ PLUGINS=\
 	plugins/motor_control.$(SO) \
 	plugins/dmm.$(SO) \
 	plugins/debug.$(SO) \
-	$(if $(WITH_MINGW),,plugins/spectrum_analyzer.so) \
-	$(if $(WITH_MINGW),,plugins/scpi.so)
+	$(if $(WITH_MINGW)||$(WITH_APPLE),,plugins/spectrum_analyzer.so) \
+	$(if $(WITH_MINGW)||$(WITH_APPLE),,plugins/scpi.so)
 
 ifdef V
 	CMD:=
@@ -135,6 +136,8 @@ trigger_dialog.o: fru.h osc.h iio_widget.h
 xml_utils.o: xml_utils.h
 phone_home.o: phone_home.h
 plugins/dac_data_manager.o: plugins/dac_data_manager.h
+
+PREFIX=$(if $(WITH_APPLE),$(),$PREFIX)
 
 install-common-files: $(OSC) $(PLUGINS)
 	install -d $(DESTDIR)$(PREFIX)/bin
