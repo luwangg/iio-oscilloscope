@@ -34,8 +34,23 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+
+#ifndef __APPLE__
 #include <linux/errno.h>
 #include <linux/types.h>
+#else
+const void* memrchr(const void *buffer, char character, size_t k) {
+  const char* ccbuf = (const char*)buffer;
+  while (k>0)
+  {
+  k--;
+  if (ccbuf[k] == character)
+    return ccbuf + k;
+  }
+  return NULL;
+}
+#endif
+
 #include <math.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>

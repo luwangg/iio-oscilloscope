@@ -48,7 +48,7 @@ CFLAGS := $(shell $(PKG_CONFIG) --cflags $(DEPENDENCIES)) \
 	-DFRU_FILES=\"$(FRU_FILES)\" -DGIT_VERSION=\"$(GIT_VERSION)\" \
 	-DGIT_COMMIT_TIMESTAMP='"$(GIT_COMMIT_TIMESTAMP)"' \
 	-DOSC_VERSION=\"$(GIT_BRANCH)-g$(GIT_HASH)\" \
-	-D_POSIX_C_SOURCE=200809L $(if $(WITH_APPLE),-I/usr/include/malloc -I/usr/include/mach -I/Library/Frameworks/iio.framework/Headers -I/Library/Frameworks/ad9361.framework/Headers)
+	$(if $(WITH_APPLE),-I/usr/include/malloc -I/usr/include/mach -I/Library/Frameworks/iio.framework/Headers -I/Library/Frameworks/ad9361.framework/Headers,-D_POSIX_C_SOURCE=200809L)
 
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
@@ -84,7 +84,7 @@ PLUGINS=\
 	plugins/dmm.$(SO) \
 	plugins/debug.$(SO) \
 	$(if $(WITH_MINGW),,plugins/spectrum_analyzer.so) \
-	$(if $(WITH_MINGW)||$(WITH_APPLE),,plugins/scpi.so)
+	$(if $(WITH_MINGW),,plugins/scpi.so)
 
 ifdef V
 	CMD:=
