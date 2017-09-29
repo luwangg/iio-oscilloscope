@@ -48,6 +48,7 @@ static void create_plot (OscPlot *plot);
 static void plot_setup(OscPlot *plot);
 static void capture_button_clicked_cb (GtkToggleToolButton *btn, gpointer data);
 static void single_shot_clicked_cb (GtkToggleToolButton *btn, gpointer data);
+static void update_grid(OscPlot *plot, gfloat min, gfloat max);
 static void add_grid(OscPlot *plot);
 static void rescale_databox(OscPlotPrivate *priv, GtkDatabox *box, gfloat border);
 static bool call_all_transform_functions(OscPlotPrivate *priv);
@@ -507,10 +508,14 @@ void osc_plot_update_rx_lbl(OscPlot *plot, bool force_update)
 	if (priv->active_transform_type == FFT_TRANSFORM ||
 		priv->active_transform_type == COMPLEX_FFT_TRANSFORM ||
 		priv->active_transform_type == FREQ_SPECTRUM_TRANSFORM) {
+		gfloat top, bottom, left, right;
+		gfloat padding;
 
 		/* In FFT mode we need to scale the x-axis according to the selected sampling frequency */
-		for (i = 0; i < tr_list->size; i++)
+		for (i = 0; i < tr_list->size; i++) {
 			Transform_setup(tr_list->transforms[i]);
+			gtk_databox_graph_set_hide(tr_list->transforms[i]->graph, TRUE);
+		}
 
 		dev_info = iio_device_get_data(transform_get_device_parent(tr_list->transforms[i - 1]));
 		sprintf(buf, "%cHz", dev_info->adc_scale);
@@ -524,10 +529,14 @@ void osc_plot_update_rx_lbl(OscPlot *plot, bool force_update)
 			return;
 		if (priv->profile_loaded_scale)
 			return;
+
+		update_grid(plot, -corr, dev_info->adc_freq / 2.0);
+		padding = (dev_info->adc_freq / 2.0 + corr) * 0.05;
+		gtk_databox_get_total_limits(GTK_DATABOX(priv->databox), &left, &right,
+				&top, &bottom);
 		gtk_databox_set_total_limits(GTK_DATABOX(priv->databox),
-				-5.0 - corr, dev_info->adc_freq / 2.0 + 5.0,
-				0.0, -100.0);
-		priv->do_a_rescale_flag = 1;
+				-corr - padding, dev_info->adc_freq / 2.0 + padding,
+				top, bottom);
 	} else {
 		switch (gtk_combo_box_get_active(GTK_COMBO_BOX(priv->hor_units))) {
 		case 0:
@@ -2851,6 +2860,7 @@ static bool call_all_transform_functions(OscPlotPrivate *priv)
 	TrList *tr_list = priv->transform_list;
 	Transform *tr;
 	bool valid = true;
+	bool tr_valid;
 	int i = 0;
 
 	if (priv->redraw_function <= 0)
@@ -2858,7 +2868,10 @@ static bool call_all_transform_functions(OscPlotPrivate *priv)
 
 	for (; i < tr_list->size; i++) {
 		tr = tr_list->transforms[i];
-		valid = valid && Transform_update_output(tr);
+		tr_valid = Transform_update_output(tr);
+		if (tr_valid)
+			gtk_databox_graph_set_hide(tr->graph, FALSE);
+		valid &= tr_valid;
 	}
 
 	return valid;
@@ -3169,8 +3182,6 @@ static void plot_setup(OscPlot *plot)
 
 	gtk_databox_graph_remove_all(GTK_DATABOX(priv->databox));
 	markers_init(plot);
-	osc_plot_update_rx_lbl(plot, FORCE_UPDATE);
-
 	for (i = 0; i < tr_list->size; i++) {
 		transform = tr_list->transforms[i];
 		Transform_setup(transform);
@@ -3189,6 +3200,8 @@ static void plot_setup(OscPlot *plot)
 		}
 		g_free(plot_type_str);
 
+		transform->graph = graph;
+
 		if (transform->x_axis_size > max_x_axis)
 			max_x_axis = transform->x_axis_size;
 
@@ -3202,6 +3215,7 @@ static void plot_setup(OscPlot *plot)
 				transform_add_own_markers(plot, transform);
 		}
 
+		gtk_databox_graph_set_hide(graph, TRUE);
 		gtk_databox_graph_add(GTK_DATABOX(priv->databox), graph);
 	}
 	if (!priv->profile_loaded_scale) {
@@ -3221,6 +3235,8 @@ static void plot_setup(OscPlot *plot)
 				0.0, -100.0);
 		}
 	}
+
+	osc_plot_update_rx_lbl(plot, FORCE_UPDATE);
 
 	bool show_phase_info = false;
 	if (priv->active_transform_type == COMPLEX_FFT_TRANSFORM &&
@@ -3867,6 +3883,22 @@ static void fill_axis(gfloat *buf, gfloat start, gfloat inc, int num)
 
 }
 
+static void update_grid(OscPlot *plot, gfloat left, gfloat right)
+{
+	OscPlotPrivate *priv = plot->priv;
+
+	if (priv->active_transform_type == FFT_TRANSFORM ||
+	    priv->active_transform_type == COMPLEX_FFT_TRANSFORM) {
+		gfloat spacing;
+
+		spacing = ceil((right - left) / 130) * 10;
+		if (spacing < 10)
+			spacing = 10;
+		fill_axis(priv->gridx, left, spacing, 14);
+		fill_axis(priv->gridy, 10, -10, 25);
+	}
+}
+
 static void add_grid(OscPlot *plot)
 {
 	OscPlotPrivate *priv = plot->priv;
@@ -3882,14 +3914,9 @@ static void add_grid(OscPlot *plot)
 	grid = gtk_databox_grid_array_new (y, x, gridy, gridx, &color_grid, 1);
 	*/
 
-	if (priv->active_transform_type == FFT_TRANSFORM) {
-		fill_axis(priv->gridx, 0, 10, 15);
-		fill_axis(priv->gridy, 10, -10, 15);
-		priv->grid = gtk_databox_grid_array_new (15, 15, priv->gridy, priv->gridx, &color_grid, 1);
-	} else if (priv->active_transform_type == COMPLEX_FFT_TRANSFORM) {
-		fill_axis(priv->gridx, -30, 10, 15);
-		fill_axis(priv->gridy, 10, -10, 15);
-		priv->grid = gtk_databox_grid_array_new (15, 15, priv->gridy, priv->gridx, &color_grid, 1);
+	if (priv->active_transform_type == FFT_TRANSFORM ||
+	    priv->active_transform_type == COMPLEX_FFT_TRANSFORM) {
+		priv->grid = gtk_databox_grid_array_new (25, 14, priv->gridy, priv->gridx, &color_grid, 1);
 	} else if (priv->active_transform_type == CONSTELLATION_TRANSFORM) {
 		fill_axis(priv->gridx, -80000, 10000, 18);
 		fill_axis(priv->gridy, -80000, 10000, 18);
