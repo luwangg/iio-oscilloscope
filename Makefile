@@ -83,7 +83,7 @@ PLUGINS=\
 	plugins/motor_control.$(SO) \
 	plugins/dmm.$(SO) \
 	plugins/debug.$(SO) \
-	$(if $(WITH_MINGW),,plugins/spectrum_analyzer.so) \
+	$(if $(WITH_MINGW)||$(WITH_APPLE),,plugins/spectrum_analyzer.so) \
 	$(if $(WITH_MINGW),,plugins/scpi.so)
 
 ifdef V
